@@ -11,11 +11,13 @@ Runs every 10 days to retrain the model with fresh data.
 EXECUTOR: KubernetesExecutor - Each task runs in its own pod on Rackspace spot instances
 DATA STORAGE: AWS S3 for passing artifacts between tasks (industry standard pattern)
 """
+
 from airflow.decorators import dag, task, task_group
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.s3 import S3CreateBucketOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from datetime import datetime, timedelta
+from kubernetes.client import models as k8s
 import os
 
 # ------------------- #
@@ -38,46 +40,42 @@ _TRAIN_MODEL_TASK_ID = "train_model"
 
 # Default args for the DAG
 default_args = {
-    'owner': 'airflow',
-    'depends_on_past': False,
-    'email_on_failure': False,
-    'email_on_retry': False,
-    'retries': 3,  # Increased retries for spot instance interruptions
-    'retry_delay': timedelta(minutes=5),
-    'execution_timeout': timedelta(hours=2),  # Prevent hanging tasks
+    "owner": "airflow",
+    "depends_on_past": False,
+    "email_on_failure": False,
+    "email_on_retry": False,
+    "retries": 3,  # Increased retries for spot instance interruptions
+    "retry_delay": timedelta(minutes=5),
+    "execution_timeout": timedelta(hours=2),  # Prevent hanging tasks
 }
 
 # KubernetesExecutor pod configuration for running on spot instances
 kubernetes_pod_config = {
-    'pod_override': {
-        'spec': {
-            'nodeSelector': {
-                'servers.ngpc.rxt.io/type': 'spot',  # Schedule on Rackspace spot instance nodes
-                'managed-by': 'terraform'  # Target nodes managed by our Terraform config
+    "pod_override": k8s.V1Pod(
+        spec=k8s.V1PodSpec(
+            node_selector={
+                "servers.ngpc.rxt.io/type": "spot",  # Schedule on Rackspace spot instance nodes
+                "managed-by": "terraform",  # Target nodes managed by our Terraform config
             },
-            'restartPolicy': 'Never',
-            # Graceful termination for spot interruptions (120 seconds)
-            'terminationGracePeriodSeconds': 120,
-            'containers': [{
-                'name': 'base',
-                'resources': {
-                    'requests': {
-                        'cpu': '500m',
-                        'memory': '1Gi'
-                    },
-                    'limits': {
-                        'cpu': '1000m',
-                        'memory': '2Gi'
-                    }
-                }
-            }]
-        }
-    }
+            restart_policy="Never",
+            termination_grace_period_seconds=120,  # Graceful termination for spot interruptions
+            containers=[
+                k8s.V1Container(
+                    name="base",
+                    resources=k8s.V1ResourceRequirements(
+                        requests={"cpu": "500m", "memory": "1Gi"},
+                        limits={"cpu": "1000m", "memory": "2Gi"},
+                    ),
+                )
+            ],
+        )
+    )
 }
 
 # -------------- #
 # DAG definition #
 # -------------- #
+
 
 @dag(
     dag_id=DAG_ID,
@@ -85,8 +83,8 @@ kubernetes_pod_config = {
     schedule=timedelta(days=10),
     catchup=False,
     default_args=default_args,
-    description='Automated ML pipeline for credit default prediction on Rackspace spot instances',
-    tags=['ml', 'credit', 'production', 'spot-instances', 'kubernetes', 's3'],
+    description="Automated ML pipeline for credit default prediction on Rackspace spot instances",
+    tags=["ml", "credit", "production", "spot-instances", "kubernetes", "s3"],
     doc_md=__doc__,
 )
 def credit_default_pipeline():
@@ -151,17 +149,14 @@ def credit_default_pipeline():
         print(f"Fetched {len(df)} rows from database")
 
         # Convert DataFrame to CSV bytes
-        csv_bytes = df.to_csv(index=False).encode('utf-8')
+        csv_bytes = df.to_csv(index=False).encode("utf-8")
 
         # Write to S3
         s3_hook = S3Hook(aws_conn_id=_AWS_CONN_ID)
         s3_key = f"{dag_id}/{task_id}/{dag_run_timestamp}.csv"
 
         s3_hook.load_bytes(
-            bytes_data=csv_bytes,
-            key=s3_key,
-            bucket_name=_S3_BUCKET,
-            replace=True
+            bytes_data=csv_bytes, key=s3_key, bucket_name=_S3_BUCKET, replace=True
         )
 
         print(f"Data saved to s3://{_S3_BUCKET}/{s3_key}")
@@ -192,18 +187,15 @@ def credit_default_pipeline():
         data_key = f"{dag_id}/{upstream_task_id}/{dag_run_timestamp}.csv"
 
         print(f"Reading data from s3://{_S3_BUCKET}/{data_key}")
-        csv_data = s3_hook.read_key(
-            key=data_key,
-            bucket_name=_S3_BUCKET
-        )
+        csv_data = s3_hook.read_key(key=data_key, bucket_name=_S3_BUCKET)
 
         # Load into DataFrame
         df = pd.read_csv(io.StringIO(csv_data))
         print(f"Loaded {len(df)} rows for training")
 
         # Prepare features and target
-        X = df.drop('default_status', axis=1)
-        y = df['default_status']
+        X = df.drop("default_status", axis=1)
+        y = df["default_status"]
 
         # Train/test split
         X_train, X_test, y_train, y_test = train_test_split(
@@ -216,10 +208,7 @@ def credit_default_pipeline():
         # Train Random Forest model
         print("Training Random Forest classifier...")
         clf = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=10,
-            random_state=42,
-            n_jobs=-1
+            n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
         )
         clf.fit(X_train, y_train)
         print("Model training complete")
@@ -231,23 +220,20 @@ def credit_default_pipeline():
 
         model_key = f"{dag_id}/{task_id}/{dag_run_timestamp}.pkl"
         s3_hook.load_file_obj(
-            file_obj=model_buffer,
-            key=model_key,
-            bucket_name=_S3_BUCKET,
-            replace=True
+            file_obj=model_buffer, key=model_key, bucket_name=_S3_BUCKET, replace=True
         )
         print(f"Model saved to s3://{_S3_BUCKET}/{model_key}")
 
         # Save test data to S3
         test_df = pd.concat([X_test, y_test], axis=1)
-        test_csv_bytes = test_df.to_csv(index=False).encode('utf-8')
+        test_csv_bytes = test_df.to_csv(index=False).encode("utf-8")
 
         test_data_key = f"{dag_id}/{task_id}/{dag_run_timestamp}_test.csv"
         s3_hook.load_bytes(
             bytes_data=test_csv_bytes,
             key=test_data_key,
             bucket_name=_S3_BUCKET,
-            replace=True
+            replace=True,
         )
         print(f"Test data saved to s3://{_S3_BUCKET}/{test_data_key}")
 
@@ -262,7 +248,12 @@ def credit_default_pipeline():
         import pandas as pd
         import joblib
         import io
-        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+        from sklearn.metrics import (
+            accuracy_score,
+            precision_score,
+            recall_score,
+            f1_score,
+        )
 
         dag_id = context["dag"].dag_id
         task_id = context["task"].task_id
@@ -275,11 +266,8 @@ def credit_default_pipeline():
         model_key = f"{dag_id}/{upstream_task_id}/{dag_run_timestamp}.pkl"
         print(f"Loading model from s3://{_S3_BUCKET}/{model_key}")
 
-        model_obj = s3_hook.get_key(
-            key=model_key,
-            bucket_name=_S3_BUCKET
-        )
-        model_bytes = model_obj.get()['Body'].read()
+        model_obj = s3_hook.get_key(key=model_key, bucket_name=_S3_BUCKET)
+        model_bytes = model_obj.get()["Body"].read()
         clf = joblib.load(io.BytesIO(model_bytes))
         print("Model loaded successfully")
 
@@ -287,15 +275,12 @@ def credit_default_pipeline():
         test_data_key = f"{dag_id}/{upstream_task_id}/{dag_run_timestamp}_test.csv"
         print(f"Loading test data from s3://{_S3_BUCKET}/{test_data_key}")
 
-        test_csv = s3_hook.read_key(
-            key=test_data_key,
-            bucket_name=_S3_BUCKET
-        )
+        test_csv = s3_hook.read_key(key=test_data_key, bucket_name=_S3_BUCKET)
         df_test = pd.read_csv(io.StringIO(test_csv))
 
         # Prepare test features and labels
-        X_test = df_test.drop('default_status', axis=1)
-        y_test = df_test['default_status']
+        X_test = df_test.drop("default_status", axis=1)
+        y_test = df_test["default_status"]
 
         print(f"Evaluating on {len(X_test)} test samples...")
 
@@ -322,10 +307,7 @@ def credit_default_pipeline():
         # Save metrics to S3
         metrics_key = f"{dag_id}/{task_id}/{dag_run_timestamp}_metrics.txt"
         s3_hook.load_string(
-            string_data=metrics,
-            key=metrics_key,
-            bucket_name=_S3_BUCKET,
-            replace=True
+            string_data=metrics, key=metrics_key, bucket_name=_S3_BUCKET, replace=True
         )
         print(f"Metrics saved to s3://{_S3_BUCKET}/{metrics_key}")
 
