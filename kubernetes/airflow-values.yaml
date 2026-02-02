@@ -1,0 +1,45 @@
+executor: KubernetesExecutor
+
+# Airflow metadata database (required for real installs)
+postgresql:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: sata
+    size: 10Gi
+  image:
+    registry: docker.io
+    repository: bitnami/postgresql
+    tag: "latest"
+
+# Redis isn't required for KubernetesExecutor
+redis:
+  enabled: false
+
+# Persist logs (optional; you can also do remote logging later)
+logs:
+  persistence:
+    enabled: false
+    storageClassName: sata
+    size: 10Gi
+
+# DAGs from Git repository using git-sync
+dags:
+  persistence:
+    enabled: false
+  gitSync:
+    enabled: true
+    repo: https://github.com/alero-awani/rackspace-airflow-cluster.git
+    branch: master
+    # If your DAGs are in a subdirectory, specify it here
+    subPath: "dags/"
+    # Sync interval in seconds (how often to pull from git)
+    wait: 60
+    # Maximum number of consecutive failures before giving up
+    maxFailures: 0
+    # Depth of git clone (use 1 for shallow clone to save time)
+    depth: 1
+
+triggerer:
+  persistence:
+    enabled: false
