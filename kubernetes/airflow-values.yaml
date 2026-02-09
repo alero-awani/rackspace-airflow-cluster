@@ -1,17 +1,45 @@
 executor: KubernetesExecutor
 
+scheduler:
+  replicas: 2
+
+  nodeSelector:
+    workload: airflow-control-plane
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "airflow-control-plane"
+      effect: "NoSchedule"
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: "site"
+      whenUnsatisfiable: "ScheduleAnyway"
+      labelSelector:
+        matchLabels:
+          component: "airflow-scheduler"
+
 # Airflow metadata database (required for real installs)
 postgresql:
   enabled: true
   persistence:
     enabled: true
-    storageClass: sata
+    storageClass: ssd
     size: 10Gi
   image:
     registry: docker.io
     repository: bitnami/postgresql
     tag: "latest"
-
+  primary:
+    nodeSelector:
+      workload: airflow-control-plane
+      site: dfw
+    tolerations:
+      - key: "workload"
+        operator: "Equal"
+        value: "airflow-control-plane"
+        effect: "NoSchedule"
 # Redis isn't required for KubernetesExecutor
 redis:
   enabled: false
@@ -41,5 +69,145 @@ dags:
     depth: 1
 
 triggerer:
+  replicas: 2
+
+  nodeSelector:
+    workload: airflow-control-plane
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "airflow-control-plane"
+      effect: "NoSchedule"
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: "site"
+      whenUnsatisfiable: "ScheduleAnyway"
+      labelSelector:
+        matchLabels:
+          component: "airflow-triggerer"
+
   persistence:
     enabled: false
+
+webserver:
+  replicas: 2
+
+  nodeSelector:
+    workload: airflow-control-plane
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "airflow-control-plane"
+      effect: "NoSchedule"
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: "site"
+      whenUnsatisfiable: "ScheduleAnyway"
+      labelSelector:
+        matchLabels:
+          component: "airflow-webserver"
+
+  startupProbe:
+    failureThreshold: 20
+    periodSeconds: 10
+
+# API Server (separate from webserver in Airflow 3.x)
+apiServer:
+  replicas: 2
+
+  nodeSelector:
+    workload: airflow-control-plane
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "airflow-control-plane"
+      effect: "NoSchedule"
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: "site"
+      whenUnsatisfiable: "ScheduleAnyway"
+      labelSelector:
+        matchLabels:
+          component: "airflow-api-server"
+
+  startupProbe:
+    failureThreshold: 20
+    periodSeconds: 10
+
+# DAG Processor (processes DAG files)
+dagProcessor:
+  replicas: 2
+
+  nodeSelector:
+    workload: airflow-control-plane
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "airflow-control-plane"
+      effect: "NoSchedule"
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: "site"
+      whenUnsatisfiable: "ScheduleAnyway"
+      labelSelector:
+        matchLabels:
+          component: "airflow-dag-processor"
+
+# Statsd exporter for metrics (does not support multiple replicas)
+statsd:
+  nodeSelector:
+    workload: airflow-control-plane
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "airflow-control-plane"
+      effect: "NoSchedule"
+
+# Airflow create user job
+createUserJob:
+  nodeSelector:
+    workload: airflow-control-plane
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "airflow-control-plane"
+      effect: "NoSchedule"
+
+# Airflow database migration job
+migrateDatabaseJob:
+  nodeSelector:
+    workload: airflow-control-plane
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "airflow-control-plane"
+      effect: "NoSchedule"
+
+secret:
+  - envName: "AIRFLOW_CONN_AWS_DEFAULT"
+    secretName: "aws-connection"
+    secretKey: "connection-uri"
+  - envName: "AIRFLOW_CONN_POSTGRES_DEFAULT"
+    secretName: "postgres-connection"
+    secretKey: "connection-uri"
+
+# Remote logging to S3 (required for KubernetesExecutor)
+config:
+  logging:
+    remote_logging: "True"
+    remote_base_log_folder: "s3://airflow-ml-artifacts/logs"
+    remote_log_conn_id: "aws_default"
+  core:
+    # Use S3TaskHandler for remote logging
+    task_log_reader: "s3.task"

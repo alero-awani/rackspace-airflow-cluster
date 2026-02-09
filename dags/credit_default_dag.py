@@ -54,8 +54,7 @@ kubernetes_pod_config = {
     "pod_override": k8s.V1Pod(
         spec=k8s.V1PodSpec(
             node_selector={
-                "servers.ngpc.rxt.io/type": "spot",  # Schedule on Rackspace spot instance nodes
-                "managed-by": "terraform",  # Target nodes managed by our Terraform config
+                "workload": "airflow-workers"  # Schedule on worker nodes only
             },
             restart_policy="Never",
             termination_grace_period_seconds=120,  # Graceful termination for spot interruptions
