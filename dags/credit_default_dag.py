@@ -9,10 +9,9 @@ This DAG orchestrates a complete ML pipeline using S3 for intermediate storage:
 Runs every 10 days to retrain the model with fresh data.
 
 EXECUTOR: KubernetesExecutor - Each task runs in its own pod on Rackspace spot instances
-DATA STORAGE: AWS S3 for passing artifacts between tasks (industry standard pattern)
 """
 
-from airflow.decorators import dag, task, task_group
+from airflow.decorators import dag, task
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.s3 import S3CreateBucketOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -96,19 +95,11 @@ def credit_default_pipeline():
     # Setup Tasks      #
     # ---------------- #
 
-    @task_group
-    def setup():
-        """Setup infrastructure before running pipeline."""
-
-        _create_bucket_if_not_exists = S3CreateBucketOperator(
-            task_id="create_s3_bucket",
-            bucket_name=_S3_BUCKET,
-            aws_conn_id=_AWS_CONN_ID,
-        )
-
-        return _create_bucket_if_not_exists
-
-    _setup = setup()
+    _create_bucket = S3CreateBucketOperator(
+        task_id="create_s3_bucket",
+        bucket_name=_S3_BUCKET,
+        aws_conn_id=_AWS_CONN_ID,
+    )
 
     # ---------------- #
     # Pipeline Tasks   #
@@ -318,8 +309,8 @@ def credit_default_pipeline():
     _train = train_model()
     _evaluate = evaluate_model()
 
-    # Chain: setup -> fetch -> train -> evaluate
-    _setup >> _fetch >> _train >> _evaluate
+    # Chain: create_bucket -> fetch -> train -> evaluate
+    _create_bucket >> _fetch >> _train >> _evaluate
 
 
 # Instantiate the DAG
