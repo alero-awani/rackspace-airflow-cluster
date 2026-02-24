@@ -115,9 +115,17 @@ def credit_default_pipeline():
         """
         import pandas as pd
 
+        from datetime import datetime
+
         dag_id = context["dag"].dag_id
         task_id = context["task"].task_id
-        dag_run_timestamp = context["logical_date"].strftime("%Y%m%dT%H%M%S")
+        # Use data_interval_start which is the Airflow 3.x replacement for logical_date
+        logical_date = (
+            context.get("data_interval_start")
+            or context.get("logical_date")
+            or datetime.now()
+        )
+        dag_run_timestamp = logical_date.strftime("%Y%m%dT%H%M%S")
 
         print(f"Fetching data from PostgreSQL database: {_POSTGRES_DATABASE}")
 
@@ -167,9 +175,17 @@ def credit_default_pipeline():
         from sklearn.model_selection import train_test_split
         from sklearn.ensemble import RandomForestClassifier
 
+        from datetime import datetime
+
         dag_id = context["dag"].dag_id
         task_id = context["task"].task_id
-        dag_run_timestamp = context["logical_date"].strftime("%Y%m%dT%H%M%S")
+        # Use data_interval_start which is the Airflow 3.x replacement for logical_date
+        logical_date = (
+            context.get("data_interval_start")
+            or context.get("logical_date")
+            or datetime.now()
+        )
+        dag_run_timestamp = logical_date.strftime("%Y%m%dT%H%M%S")
         upstream_task_id = _FETCH_DATA_TASK_ID
 
         # Read data from S3 (written by fetch_data task)
@@ -245,9 +261,17 @@ def credit_default_pipeline():
             f1_score,
         )
 
+        from datetime import datetime
+
         dag_id = context["dag"].dag_id
         task_id = context["task"].task_id
-        dag_run_timestamp = context["logical_date"].strftime("%Y%m%dT%H%M%S")
+        # Use data_interval_start which is the Airflow 3.x replacement for logical_date
+        logical_date = (
+            context.get("data_interval_start")
+            or context.get("logical_date")
+            or datetime.now()
+        )
+        dag_run_timestamp = logical_date.strftime("%Y%m%dT%H%M%S")
         upstream_task_id = _TRAIN_MODEL_TASK_ID
 
         s3_hook = S3Hook(aws_conn_id=_AWS_CONN_ID)
