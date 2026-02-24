@@ -117,7 +117,7 @@ def credit_default_pipeline():
 
         dag_id = context["dag"].dag_id
         task_id = context["task"].task_id
-        dag_run_timestamp = context["ts_nodash"]
+        dag_run_timestamp = context["logical_date"].strftime("%Y%m%dT%H%M%S")
 
         print(f"Fetching data from PostgreSQL database: {_POSTGRES_DATABASE}")
 
@@ -169,7 +169,7 @@ def credit_default_pipeline():
 
         dag_id = context["dag"].dag_id
         task_id = context["task"].task_id
-        dag_run_timestamp = context["ts_nodash"]
+        dag_run_timestamp = context["logical_date"].strftime("%Y%m%dT%H%M%S")
         upstream_task_id = _FETCH_DATA_TASK_ID
 
         # Read data from S3 (written by fetch_data task)
@@ -247,7 +247,7 @@ def credit_default_pipeline():
 
         dag_id = context["dag"].dag_id
         task_id = context["task"].task_id
-        dag_run_timestamp = context["ts_nodash"]
+        dag_run_timestamp = context["logical_date"].strftime("%Y%m%dT%H%M%S")
         upstream_task_id = _TRAIN_MODEL_TASK_ID
 
         s3_hook = S3Hook(aws_conn_id=_AWS_CONN_ID)
